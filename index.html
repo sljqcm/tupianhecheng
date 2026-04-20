@@ -50,73 +50,74 @@
     const ctx = canvas.getContext('2d');
     const zoomRange = document.getElementById('zoomRange');
     
-    // 1. 定义全局变量
+    // 全局变量
     const MASK_SRC = 'GoogleOne.png'; 
     let maskImg = new Image();
-    let userImg = null; // 用户上传的照片对象
+    let userImg = null; 
     
     let imgX = canvas.width / 2;
     let imgY = canvas.height / 2;
     let imgScale = 1.0;
     
     let isDragging = false;
-    let startX, startY;
 
-    // 2. 初始化加载底片（遮罩）
-    maskImg.src = MASK_SRC;
-    maskImg.onload = () => {
-        console.log("底片加载成功");
-        draw();
-    };
-
-    // 3. 处理用户上传图片（修正后的逻辑）
-    document.getElementById('userFile').onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const tempImg = new Image();
-            tempImg.onload = () => {
-                userImg = tempImg; // 将加载好的图片赋给全局变量
-                
-                // 自动调整初始比例，使图片至少能填满画布的一边
-                const ratio = Math.max(canvas.width / userImg.width, canvas.height / userImg.height);
-                imgScale = ratio; 
-                imgX = canvas.width / 2;
-                imgY = canvas.height / 2;
-                
-                console.log("用户图片加载成功，开始重绘");
-                draw(); 
-            };
-            tempImg.src = event.target.result;
-        };
-        reader.readAsDataURL(file);
-    };
-
-    // 4. 核心绘制函数（严格控制层级）
+    // 核心绘制函数
     function draw() {
-        // A. 清空画布
+        // 1. 清空
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // B. 先画用户照片（底层）
+        // 2. 绘制用户图 (底层)
         if (userImg) {
-            ctx.save();
             const drawW = userImg.width * imgScale;
             const drawH = userImg.height * imgScale;
             ctx.drawImage(userImg, imgX - drawW / 2, imgY - drawH / 2, drawW, drawH);
-            ctx.restore();
+        } else {
+            // 如果没图，画个文字提示，方便调试
+            ctx.fillStyle = "#999";
+            ctx.textAlign = "center";
+            ctx.fillText("等待上传图片...", canvas.width/2, canvas.height/2);
         }
 
-        // C. 后画彩色圆环底片（顶层）
-        // 使用 complete 属性确保底片已加载，否则会画出空白
+        // 3. 绘制遮罩 (顶层)
         if (maskImg.complete) {
             ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height);
         }
     }
 
-    // 5. 交互逻辑：缩放控制
-    zoomRange.oninput = (e) => {
+    // 初始化底片
+    maskImg.src = MASK_SRC;
+    maskImg.onload = () => {
+        console.log("底片渲染完毕");
+        draw();
+    };
+
+    // 监听上传
+    document.getElementById('userFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        console.log("检测到文件选择:", file.name);
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = function() {
+                userImg = img;
+                // 计算初始缩放：让图片至少填满画布
+                imgScale = Math.max(canvas.width / userImg.width, canvas.height / userImg.height);
+                imgX = canvas.width / 2;
+                imgY = canvas.height / 2;
+                console.log("用户图片加载完成，当前缩放:", imgScale);
+                draw();
+            };
+            img.onerror = () => console.error("图片解析失败");
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // 缩放逻辑
+    zoomRange.addEventListener('input', (e) => {
         const val = e.target.value;
         document.getElementById('zoomVal').innerText = val;
         if (userImg) {
@@ -124,17 +125,14 @@
             imgScale = baseScale * (val / 100);
             draw();
         }
-    };
+    });
 
-    // 6. 交互逻辑：拖拽支持
-    canvas.onmousedown = (e) => {
-        isDragging = true;
-    };
-
+    // 拖拽逻辑
+    canvas.onmousedown = () => isDragging = true;
+    window.ononmouseup = () => isDragging = false;
     window.onmousemove = (e) => {
         if (!isDragging || !userImg) return;
         const rect = canvas.getBoundingClientRect();
-        // 计算鼠标位移并换算为画布坐标
         const dx = e.movementX * (canvas.width / rect.width);
         const dy = e.movementY * (canvas.height / rect.height);
         imgX += dx;
@@ -142,12 +140,10 @@
         draw();
     };
 
-    window.onmouseup = () => isDragging = false;
-
-    // 7. 合并下载
+    // 下载
     document.getElementById('downloadBtn').onclick = () => {
         const link = document.createElement('a');
-        link.download = 'google_review_avatar.png';
+        link.download = 'merged_image.png';
         link.href = canvas.toDataURL('image/png');
         link.click();
     };
