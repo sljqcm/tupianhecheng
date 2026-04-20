@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 丝滑图像缝合</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div class="bg-indigo-600 p-6">
+            <h1 class="text-2xl font-bold text-white text-center">AI 深度图像融合工具</h1>
+            <p class="text-indigo-100 text-center mt-2 text-sm">上传两张图片，AI 将自动处理接缝并融合光影</p>
+        </div>
+        
+        <div class="p-6 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-2">
+                    <label class="block text-sm font-semibold text-gray-700">图片 A (背景/主体)</label>
+                    <div id="dropA" class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-indigo-400 transition cursor-pointer bg-gray-50">
+                        <input type="file" id="fileA" accept="image/*" class="hidden">
+                        <div id="previewContainerA">
+                            <p class="text-gray-400 py-8">点击或拖拽上传</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="block text-sm font-semibold text-gray-700">图片 B (融合物)</label>
+                    <div id="dropB" class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-indigo-400 transition cursor-pointer bg-gray-50">
+                        <input type="file" id="fileB" accept="image/*" class="hidden">
+                        <div id="previewContainerB">
+                            <p class="text-gray-400 py-8">点击或拖拽上传</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">融合指令 (Prompt)</label>
+                <textarea id="prompt" rows="2" class="w-full border border-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="描述如何缝合，例如：将图片 B 的人物自然地融入图片 A 的右侧森林中，注意光影统一。"></textarea>
+            </div>
+            
+            <button id="startBtn" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all disabled:bg-gray-400">
+                开始 AI 融合处理
+            </button>
+
+            <div id="statusArea" class="hidden space-y-4">
+                <div class="flex items-center justify-between text-sm font-medium">
+                    <span id="statusText" class="text-indigo-600 italic">正在初始化 AI 模型...</span>
+                    <span id="timer">0s</span>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-2">
+                    <div id="progressBar" class="bg-indigo-500 h-2 rounded-full transition-all duration-500" style="width: 5%"></div>
+                </div>
+            </div>
+
+            <div id="resultArea" class="hidden border-t pt-6 text-center">
+                <h2 class="text-lg font-bold mb-4">✨ 融合完成</h2>
+                <img id="resultImage" class="mx-auto rounded-lg shadow-2xl max-w-full border-4 border-white" src="">
+                <a id="downloadBtn" href="#" download="stitched.png" class="inline-block mt-4 text-indigo-600 font-medium hover:underline">保存结果图片</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = id => document.getElementById(id);
+        let predictionId = null;
+        let startTime = null;
+
+        // 图片预览逻辑
+        const bindUpload = (dropId, fileId, previewId) => {
+            const drop = $(dropId);
+            const file = $(fileId);
+            drop.onclick = () => file.click();
+            file.onchange = (e) => {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    $(previewId).innerHTML = `<img src="${ev.target.result}" class="max-h-48 mx-auto rounded">`;
+                };
+                reader.readAsDataURL(e.target.files[0]);
+            };
+        };
+        bindUpload('dropA', 'fileA', 'previewContainerA');
+        bindUpload('dropB', 'fileB', 'previewContainerB');
+
+        $('startBtn').onclick = async () => {
+            const fA = $('fileA').files[0];
+            const fB = $('fileB').files[0];
+            const p = $('prompt').value;
+            if(!fA || !fB || !p) return alert('请填入完整信息');
+
+            // 重置 UI
+            $('startBtn').disabled = true;
+            $('statusArea').classList.remove('hidden');
+            $('resultArea').classList.add('hidden');
+            let seconds = 0;
+            startTime = setInterval(() => $('timer').innerText = `${++seconds}s`, 1000);
+
+            try {
+                // 1. 提交任务
+                const res = await fetch('/api/stitch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        imageA: await toBase64(fA), 
+                        imageB: await toBase64(fB), 
+                        prompt: p 
+                    })
+                });
+                const data = await res.json();
+                predictionId = data.id;
+
+                // 2. 开始轮询
+                pollResult();
+            } catch (err) {
+                alert('启动失败');
+                resetUI();
+            }
+        };
+
+        async function pollResult() {
+            try {
+                const res = await fetch(`/api/check?id=${predictionId}`);
+                const data = await res.json();
+
+                if (data.status === 'succeeded') {
+                    showResult(data.output[0]);
+                } else if (data.status === 'failed') {
+                    alert('AI 生成失败，请重试');
+                    resetUI();
+                } else {
+                    // 更新进度条模拟
+                    const currentWidth = parseFloat($('progressBar').style.width);
+                    if(currentWidth < 90) $('progressBar').style.width = (currentWidth + 5) + '%';
+                    $('statusText').innerText = `AI 正在构图与渲染 (${data.status})...`;
+                    setTimeout(pollResult, 3000); // 每 3 秒问一次
+                }
+            } catch (e) {
+                setTimeout(pollResult, 3000);
+            }
+        }
+
+        function showResult(url) {
+            clearInterval(startTime);
+            $('progressBar').style.width = '100%';
+            $('statusText').innerText = '处理完成！';
+            $('resultImage').src = url;
+            $('downloadBtn').href = url;
+            $('resultArea').classList.remove('hidden');
+            $('startBtn').disabled = false;
+        }
+
+        function resetUI() {
+            clearInterval(startTime);
+            $('startBtn').disabled = false;
+            $('statusArea').classList.add('hidden');
+        }
+
+        const toBase64 = file => new Promise((res) => {
+            const r = new FileReader(); r.readAsDataURL(file);
+            r.onload = () => res(r.target.result);
+        });
+    </script>
+</body>
+</html>
