@@ -63,24 +63,26 @@
 
     // 核心绘制函数
     function draw() {
-        // 1. 清空
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 2. 绘制用户图 (底层)
+        // --- 重点：改变顺序 ---
+    
+        // 1. 先画底片 (现在它在最底层)
+        if (maskImg.complete) {
+            ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height);
+        }
+
+        // 2. 再画用户照片 (现在它在最顶层)
         if (userImg) {
+        ctx.save();
+        // 临时增加透明度，看看照片到底在哪儿！
+            ctx.globalAlpha = 0.7; 
+        
             const drawW = userImg.width * imgScale;
             const drawH = userImg.height * imgScale;
             ctx.drawImage(userImg, imgX - drawW / 2, imgY - drawH / 2, drawW, drawH);
-        } else {
-            // 如果没图，画个文字提示，方便调试
-            ctx.fillStyle = "#999";
-            ctx.textAlign = "center";
-            ctx.fillText("等待上传图片...", canvas.width/2, canvas.height/2);
-        }
-
-        // 3. 绘制遮罩 (顶层)
-        if (maskImg.complete) {
-            ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height);
+        
+            ctx.restore();
         }
     }
 
