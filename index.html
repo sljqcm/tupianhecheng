@@ -69,24 +69,29 @@
         maskImg.src = MASK_SRC;
         maskImg.onload = draw;
 
-        // 2. 处理用户上传
-        document.getElementById('userFile').onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                userImg = new Image();
-                userImg.onload = () => {
-                    // 初始化图片位置和比例
-                    imgScale = canvas.width / userImg.width;
-                    imgX = canvas.width / 2;
-                    imgY = canvas.height / 2;
-                    draw();
-                };
-                userImg.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+        // 修改后的用户上传逻辑
+document.getElementById('userFile').onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const tempImg = new Image();
+        tempImg.onload = () => {
+            userImg = tempImg; // 确保图片完全加载后再赋值
+            // 自动调整初始比例，使其适配画布
+            const ratio = Math.max(canvas.width / userImg.width, canvas.height / userImg.height);
+            imgScale = ratio; 
+            imgX = canvas.width / 2;
+            imgY = canvas.height / 2;
+            
+            console.log("用户图片加载成功，开始绘制");
+            draw(); // 强制重绘
         };
+        tempImg.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+};
 
         // 3. 核心绘制函数
         function draw() {
